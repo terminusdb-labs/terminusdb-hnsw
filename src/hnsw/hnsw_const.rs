@@ -358,7 +358,7 @@ where
                     Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                     Layer::Zero => (neighbor, neighbor),
                 })
-                .filter(|(_, v)| seen.contains(v));
+                .filter(|(_, v)| !seen.contains(v));
             let neighbor_distance =
                 neighbor_and_visit_nodes.map(|(n, v)| (n, v, metric.distance(q, &features[v])));
             let mut seen = Vec::new();
