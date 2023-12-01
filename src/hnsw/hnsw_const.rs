@@ -1,6 +1,7 @@
 use super::nodes::{HasNeighbors, Layer};
 use crate::hnsw::nodes::{NeighborNodes, Node};
 use crate::*;
+use alloc::collections::BinaryHeap;
 use alloc::{vec, vec::Vec};
 use num_traits::Zero;
 use rand_core::{RngCore, SeedableRng};
@@ -342,6 +343,11 @@ where
         layer: Layer<&[Node<M>]>,
         cap: usize,
     ) {
+        let mut nearest: BinaryHeap<NeighborForHeap<Met::Unit>> = BinaryHeap::new();
+        let mut old_nearest = Vec::new();
+
+        core::mem::swap(&mut old_nearest, &mut searcher.nearest);
+        nearest.extend(old_nearest.into_iter().map(|n| NeighborForHeap(n)));
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             let neighbor_candidates = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
@@ -366,25 +372,32 @@ where
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
                 // Attempt to insert into nearest queue.
-                let pos = searcher.nearest.partition_point(|n| n.distance <= distance);
-                if pos != cap {
+                let pos_not_equal_to_cap = if let Some(top) = nearest.peek() {
+                    distance > top.0.distance
+                } else {
+                    false
+                };
+                if pos_not_equal_to_cap {
                     // It was successful. Now we need to know if its full.
-                    if searcher.nearest.len() == cap {
+                    if nearest.len() == cap {
                         // In this case remove the worst item.
-                        searcher.nearest.pop();
+                        nearest.pop();
                     }
                     // Either way, add the new item.
                     let candidate = Neighbor {
                         index: neighbor,
                         distance,
                     };
-                    searcher.nearest.insert(pos, candidate);
+                    nearest.push(NeighborForHeap(candidate));
                     searcher.candidates.push(candidate);
                 };
                 seen.push(v);
             }
             searcher.seen.extend(seen);
         }
+        let mut new_nearest: Vec<_> = nearest.into_iter().map(|n| n.0).collect();
+        new_nearest.reverse();
+        core::mem::swap(&mut new_nearest, &mut searcher.nearest);
     }
 
     /// Greedily finds the approximate nearest neighbors to `q` in the zero layer.
@@ -563,5 +576,20 @@ where
 {
     fn default() -> Self {
         Self::new(Met::default())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NeighborForHeap<Unit: PartialEq + Eq + PartialOrd + Ord>(pub Neighbor<Unit>);
+
+impl<Unit: PartialEq + Eq + PartialOrd + Ord> PartialOrd for NeighborForHeap<Unit> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.distance.cmp(&other.0.distance)
     }
 }
