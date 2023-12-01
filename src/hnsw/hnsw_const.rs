@@ -365,10 +365,8 @@ where
                     Layer::Zero => (neighbor, neighbor),
                 })
                 .filter(|(_, v)| !seen.contains(v));
-            let neighbor_distance: Vec<_> = neighbor_and_visit_nodes
-                .par_bridge()
-                .map(|(n, v)| (n, v, metric.distance(q, &features[v])))
-                .collect();
+            let neighbor_distance =
+                neighbor_and_visit_nodes.map(|(n, v)| (n, v, metric.distance(q, &features[v])));
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
                 // Attempt to insert into nearest queue.
