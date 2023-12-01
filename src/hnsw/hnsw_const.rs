@@ -4,6 +4,7 @@ use crate::*;
 use alloc::{vec, vec::Vec};
 use num_traits::Zero;
 use rand_core::{RngCore, SeedableRng};
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use space::{Knn, KnnPoints, Metric, Neighbor};
@@ -81,10 +82,12 @@ where
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> Knn for Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> Knn for Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy + Zero,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     type Ix = usize;
     type Metric = Met;
@@ -108,20 +111,24 @@ where
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> KnnPoints for Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> KnnPoints for Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy + Zero,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     fn get_point(&self, index: usize) -> &'_ T {
         &self.features[index]
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     /// Creates a HNSW with the passed `prng`.
     pub fn new_prng(metric: Met, prng: R) -> Self {
@@ -336,39 +343,42 @@ where
         cap: usize,
     ) {
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
-            for neighbor in match layer {
-                Layer::NonZero(layer) => layer[index as usize].get_neighbors(),
-                Layer::Zero => self.zero[index as usize].get_neighbors(),
-            } {
-                let node_to_visit = match layer {
-                    Layer::NonZero(layer) => layer[neighbor as usize].zero_node,
-                    Layer::Zero => neighbor,
-                };
-
-                // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
-                // across all layers since zero nodes are consistent among all layers.
-                // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
-                if searcher.seen.insert(node_to_visit) {
-                    // Compute the distance of this neighbor.
-                    let distance = self
-                        .metric
-                        .distance(q, &self.features[node_to_visit as usize]);
-                    // Attempt to insert into nearest queue.
-                    let pos = searcher.nearest.partition_point(|n| n.distance <= distance);
-                    if pos != cap {
-                        // It was successful. Now we need to know if its full.
-                        if searcher.nearest.len() == cap {
-                            // In this case remove the worst item.
-                            searcher.nearest.pop();
-                        }
-                        // Either way, add the new item.
-                        let candidate = Neighbor {
-                            index: neighbor as usize,
-                            distance,
-                        };
-                        searcher.nearest.insert(pos, candidate);
-                        searcher.candidates.push(candidate);
+            let neighbor_candidates = match layer {
+                Layer::NonZero(layer) => layer[index].get_neighbors(),
+                Layer::Zero => self.zero[index].get_neighbors(),
+            };
+            // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
+            // across all layers since zero nodes are consistent among all layers.
+            // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
+            let neighbor_and_visit_nodes: Vec<_> = neighbor_candidates
+                .map(|neighbor| match layer {
+                    Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
+                    Layer::Zero => (neighbor, neighbor),
+                })
+                .filter(|(_, v)| searcher.seen.insert(*v))
+                .collect();
+            let metric = &self.metric;
+            let features = &self.features;
+            let neighbor_distance: Vec<_> = neighbor_and_visit_nodes
+                .into_par_iter()
+                .map(|(n, v)| (n, metric.distance(q, &features[v])))
+                .collect();
+            for (neighbor, distance) in neighbor_distance {
+                // Attempt to insert into nearest queue.
+                let pos = searcher.nearest.partition_point(|n| n.distance <= distance);
+                if pos != cap {
+                    // It was successful. Now we need to know if its full.
+                    if searcher.nearest.len() == cap {
+                        // In this case remove the worst item.
+                        searcher.nearest.pop();
                     }
+                    // Either way, add the new item.
+                    let candidate = Neighbor {
+                        index: neighbor,
+                        distance,
+                    };
+                    searcher.nearest.insert(pos, candidate);
+                    searcher.candidates.push(candidate);
                 }
             }
         }
