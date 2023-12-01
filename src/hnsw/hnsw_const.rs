@@ -350,20 +350,19 @@ where
             // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
             // across all layers since zero nodes are consistent among all layers.
             // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
-            let neighbor_and_visit_nodes: Vec<_> = neighbor_candidates
+            let metric = &self.metric;
+            let features = &self.features;
+            let seen = &searcher.seen;
+            let neighbor_and_visit_nodes = neighbor_candidates
                 .map(|neighbor| match layer {
                     Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                     Layer::Zero => (neighbor, neighbor),
                 })
-                .filter(|(_, v)| searcher.seen.insert(*v))
-                .collect();
-            let metric = &self.metric;
-            let features = &self.features;
-            let neighbor_distance: Vec<_> = neighbor_and_visit_nodes
-                .into_iter()
-                .map(|(n, v)| (n, metric.distance(q, &features[v])))
-                .collect();
-            for (neighbor, distance) in neighbor_distance {
+                .filter(|(_, v)| seen.contains(v));
+            let neighbor_distance =
+                neighbor_and_visit_nodes.map(|(n, v)| (n, v, metric.distance(q, &features[v])));
+            let mut seen = Vec::new();
+            for (neighbor, v, distance) in neighbor_distance {
                 // Attempt to insert into nearest queue.
                 let pos = searcher.nearest.partition_point(|n| n.distance <= distance);
                 if pos != cap {
@@ -379,8 +378,10 @@ where
                     };
                     searcher.nearest.insert(pos, candidate);
                     searcher.candidates.push(candidate);
-                }
+                };
+                seen.push(v);
             }
+            searcher.seen.extend(seen);
         }
     }
 
@@ -400,7 +401,7 @@ where
         let &Neighbor { index, distance } = searcher.nearest.first().unwrap();
         searcher.nearest.clear();
         // Update the node to the next layer.
-        let new_index = layer[index].next_node as usize;
+        let new_index = layer[index].next_node;
         let candidate = Neighbor {
             index: new_index,
             distance,
@@ -435,7 +436,7 @@ where
     /// Gets the entry point's feature.
     fn entry_feature(&self) -> &T {
         if let Some(last_layer) = self.layers.last() {
-            &self.features[last_layer[0].zero_node as usize]
+            &self.features[last_layer[0].zero_node]
         } else {
             &self.features[0]
         }
