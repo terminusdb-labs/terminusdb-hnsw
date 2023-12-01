@@ -336,6 +336,7 @@ where
         cap: usize,
     ) {
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
+            let mut seen = Vec::new();
             for neighbor in match layer {
                 Layer::NonZero(layer) => layer[index as usize].get_neighbors(),
                 Layer::Zero => self.zero[index as usize].get_neighbors(),
@@ -348,7 +349,8 @@ where
                 // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
                 // across all layers since zero nodes are consistent among all layers.
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
-                if searcher.seen.insert(node_to_visit) {
+                if !searcher.seen.contains(&node_to_visit) {
+                    seen.push(node_to_visit);
                     // Compute the distance of this neighbor.
                     let distance = self
                         .metric
@@ -371,6 +373,7 @@ where
                     }
                 }
             }
+            searcher.seen.extend(seen);
         }
     }
 
