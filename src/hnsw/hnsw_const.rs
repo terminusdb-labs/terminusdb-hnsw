@@ -360,7 +360,7 @@ where
             let metric = &self.metric;
             let features = &self.features;
             let neighbor_distance: Vec<_> = neighbor_and_visit_nodes
-                .into_par_iter()
+                .into_iter()
                 .map(|(n, v)| (n, metric.distance(q, &features[v])))
                 .collect();
             for (neighbor, distance) in neighbor_distance {
