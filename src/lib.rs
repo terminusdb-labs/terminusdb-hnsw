@@ -57,7 +57,7 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> PartialOrd for NeighborForHeap<Uni
 
 impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.0.distance.cmp(&other.0.distance)
+        other.0.distance.cmp(&self.0.distance)
     }
 }
 

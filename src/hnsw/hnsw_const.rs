@@ -364,15 +364,16 @@ where
                 .filter(|(_, v)| !seen.contains(v));
             let neighbor_distance =
                 neighbor_and_visit_nodes.map(|(n, v)| (n, v, metric.distance(q, &features[v])));
+
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
                 // Attempt to insert into nearest queue.
-                let pos_not_equal_to_cap = if let Some(top) = searcher.nearest.peek() {
-                    distance < top.0.distance
+                let less_than_max = if let Some(top) = searcher.nearest.peek() {
+                    top.0.distance <= distance
                 } else {
                     false
                 };
-                if pos_not_equal_to_cap {
+                if less_than_max {
                     // It was successful. Now we need to know if its full.
                     if searcher.nearest.len() == cap {
                         // In this case remove the worst item.
