@@ -6,7 +6,7 @@ mod hnsw;
 pub use self::hnsw::*;
 
 use ahash::RandomState;
-use alloc::{vec, vec::Vec};
+use alloc::{collections::BinaryHeap, vec, vec::Vec};
 use hashbrown::HashSet;
 use space::Neighbor;
 
@@ -46,15 +46,30 @@ impl Default for Params {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NeighborForHeap<Unit: PartialEq + Eq + PartialOrd + Ord>(pub Neighbor<Unit>);
+
+impl<Unit: PartialEq + Eq + PartialOrd + Ord> PartialOrd for NeighborForHeap<Unit> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.distance.cmp(&other.0.distance)
+    }
+}
+
 /// Contains all the state used when searching the HNSW
 #[derive(Clone, Debug)]
-pub struct Searcher<Metric> {
+pub struct Searcher<Metric: Ord> {
     candidates: Vec<Neighbor<Metric>>,
-    nearest: Vec<Neighbor<Metric>>,
+    nearest: BinaryHeap<NeighborForHeap<Metric>>,
     seen: HashSet<usize, RandomState>,
 }
 
-impl<Metric> Searcher<Metric> {
+impl<Metric: Ord> Searcher<Metric> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -66,11 +81,11 @@ impl<Metric> Searcher<Metric> {
     }
 }
 
-impl<Metric> Default for Searcher<Metric> {
+impl<Metric: Ord> Default for Searcher<Metric> {
     fn default() -> Self {
         Self {
             candidates: vec![],
-            nearest: vec![],
+            nearest: BinaryHeap::new(),
             seen: HashSet::with_hasher(RandomState::with_seeds(0, 0, 0, 0)),
         }
     }

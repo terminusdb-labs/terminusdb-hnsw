@@ -250,12 +250,12 @@ where
     ///
     /// The `item` must be retrieved from [`HNSW::search_layer`].
     pub fn feature(&self, item: usize) -> &T {
-        &self.features[item as usize]
+        &self.features[item]
     }
 
     /// Extract the feature from a particular level for a given item returned by [`HNSW::search_layer`].
     pub fn layer_feature(&self, level: usize, item: usize) -> &T {
-        &self.features[self.layer_item_id(level, item) as usize]
+        &self.features[self.layer_item_id(level, item)]
     }
 
     /// Retrieve the item ID for a given layer item returned by [`HNSW::search_layer`].
@@ -263,7 +263,7 @@ where
         if level == 0 {
             item
         } else {
-            self.layers[level][item as usize].zero_node
+            self.layers[level][item].zero_node
         }
     }
 
@@ -318,7 +318,8 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                dest.copy_from_slice(&searcher.nearest[..found]);
+                let nearest: Vec<_> = searcher.nearest.iter().take(found).map(|n| n.0).collect();
+                dest.copy_from_slice(&nearest[..found]);
                 return &mut dest[..found];
             }
             self.lower_search(layer, searcher);
@@ -330,7 +331,8 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        dest[..found].copy_from_slice(&searcher.nearest[..found]);
+        let nearest: Vec<_> = searcher.nearest.iter().take(found).map(|n| n.0).collect();
+        dest[..found].copy_from_slice(&nearest[..found]);
         &mut dest[..found]
     }
 
@@ -343,11 +345,6 @@ where
         layer: Layer<&[Node<M>]>,
         cap: usize,
     ) {
-        let mut nearest: BinaryHeap<NeighborForHeap<Met::Unit>> = BinaryHeap::new();
-        let mut old_nearest = Vec::new();
-
-        core::mem::swap(&mut old_nearest, &mut searcher.nearest);
-        nearest.extend(old_nearest.into_iter().map(|n| NeighborForHeap(n)));
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             let neighbor_candidates = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
@@ -370,32 +367,29 @@ where
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
                 // Attempt to insert into nearest queue.
-                let pos_not_equal_to_cap = if let Some(top) = nearest.peek() {
-                    distance > top.0.distance
+                let pos_not_equal_to_cap = if let Some(top) = searcher.nearest.peek() {
+                    distance < top.0.distance
                 } else {
                     false
                 };
                 if pos_not_equal_to_cap {
                     // It was successful. Now we need to know if its full.
-                    if nearest.len() == cap {
+                    if searcher.nearest.len() == cap {
                         // In this case remove the worst item.
-                        nearest.pop();
+                        searcher.nearest.pop();
                     }
                     // Either way, add the new item.
                     let candidate = Neighbor {
                         index: neighbor,
                         distance,
                     };
-                    nearest.push(NeighborForHeap(candidate));
+                    searcher.nearest.push(NeighborForHeap(candidate));
                     searcher.candidates.push(candidate);
                 };
                 seen.push(v);
             }
             searcher.seen.extend(seen);
         }
-        let mut new_nearest: Vec<_> = nearest.into_iter().map(|n| n.0).collect();
-        new_nearest.reverse();
-        core::mem::swap(&mut new_nearest, &mut searcher.nearest);
     }
 
     /// Greedily finds the approximate nearest neighbors to `q` in the zero layer.
@@ -411,8 +405,8 @@ where
         searcher.candidates.clear();
         // Only preserve the best candidate. The original paper's algorithm uses `1` every time.
         // See Algorithm 5 line 5 of the paper. The paper makes no further comment on why `1` was chosen.
-        let &Neighbor { index, distance } = searcher.nearest.first().unwrap();
-        searcher.nearest.clear();
+        let n = searcher.nearest.peek().unwrap().0;
+        let Neighbor { index, distance } = n;
         // Update the node to the next layer.
         let new_index = layer[index].next_node;
         let candidate = Neighbor {
@@ -420,7 +414,7 @@ where
             distance,
         };
         // Insert the index of the nearest neighbor into the nearest pool for the next layer.
-        searcher.nearest.push(candidate);
+        searcher.nearest.push(NeighborForHeap(candidate));
         // Insert the index into the candidate pool as well.
         searcher.candidates.push(candidate);
     }
@@ -437,7 +431,7 @@ where
             distance: entry_distance,
         };
         searcher.candidates.push(candidate);
-        searcher.nearest.push(candidate);
+        searcher.nearest.push(NeighborForHeap(candidate));
         searcher.seen.insert(
             self.layers
                 .last()
@@ -463,23 +457,23 @@ where
 
     /// Creates a new node at a layer given its nearest neighbors in that layer.
     /// This contains Algorithm 3 from the paper, but also includes some additional logic.
-    fn create_node(&mut self, q: &T, nearest: &[Neighbor<Met::Unit>], layer: usize) {
+    fn create_node(&mut self, q: &T, nearest: &BinaryHeap<NeighborForHeap<U>>, layer: usize) {
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
             for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
-                *d = s.index as usize;
+                *d = s.0.index;
             }
             let node = NeighborNodes { neighbors };
             for neighbor in node.get_neighbors() {
-                self.add_neighbor(q, new_index as usize, neighbor, layer);
+                self.add_neighbor(q, new_index, neighbor, layer);
             }
             self.zero.push(node);
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
             for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
-                *d = s.index;
+                *d = s.0.index;
             }
             let node = Node {
                 zero_node: self.zero.len(),
@@ -520,11 +514,9 @@ where
             // In this case we did find the first spot where the target was empty within the slice.
             // Now we add the neighbor to this slot.
             if layer == 0 {
-                self.zero[target_ix as usize].neighbors[empty_point] = node_ix;
+                self.zero[target_ix].neighbors[empty_point] = node_ix;
             } else {
-                self.layers[layer - 1][target_ix as usize]
-                    .neighbors
-                    .neighbors[empty_point] = node_ix;
+                self.layers[layer - 1][target_ix].neighbors.neighbors[empty_point] = node_ix;
             }
         } else {
             // Otherwise, we need to find the worst neighbor currently.
@@ -556,11 +548,9 @@ where
             // This is also different for the zero layer.
             if self.metric.distance(q, target_feature) < worst_distance {
                 if layer == 0 {
-                    self.zero[target_ix as usize].neighbors[worst_ix] = node_ix;
+                    self.zero[target_ix].neighbors[worst_ix] = node_ix;
                 } else {
-                    self.layers[layer - 1][target_ix as usize]
-                        .neighbors
-                        .neighbors[worst_ix] = node_ix;
+                    self.layers[layer - 1][target_ix].neighbors.neighbors[worst_ix] = node_ix;
                 }
             }
         }
@@ -574,20 +564,5 @@ where
 {
     fn default() -> Self {
         Self::new(Met::default())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct NeighborForHeap<Unit: PartialEq + Eq + PartialOrd + Ord>(pub Neighbor<Unit>);
-
-impl<Unit: PartialEq + Eq + PartialOrd + Ord> PartialOrd for NeighborForHeap<Unit> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.0.distance.cmp(&other.0.distance).reverse()
     }
 }
