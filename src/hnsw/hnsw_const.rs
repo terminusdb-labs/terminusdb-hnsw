@@ -9,6 +9,7 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use space::{Knn, KnnPoints, Metric, Neighbor};
+use std::fmt::Debug;
 
 /// This provides a HNSW implementation for any distance function.
 ///
@@ -86,7 +87,7 @@ where
 impl<Met, T, R, U, const M: usize, const M0: usize> Knn for Hnsw<Met, T, R, M, M0>
 where
     T: Send + Sync,
-    U: Send + Sync + Ord + Copy + Zero,
+    U: Send + Sync + Ord + Copy + Zero + Debug,
     R: RngCore,
     Met: Metric<T, Unit = U> + Send + Sync,
 {
@@ -115,7 +116,7 @@ where
 impl<Met, T, R, U, const M: usize, const M0: usize> KnnPoints for Hnsw<Met, T, R, M, M0>
 where
     T: Send + Sync,
-    U: Send + Sync + Ord + Copy + Zero,
+    U: Send + Sync + Ord + Copy + Zero + Debug,
     R: RngCore,
     Met: Metric<T, Unit = U> + Send + Sync,
 {
@@ -127,7 +128,7 @@ where
 impl<Met, T, R, U, const M: usize, const M0: usize> Hnsw<Met, T, R, M, M0>
 where
     T: Send + Sync,
-    U: Send + Sync + Ord + Copy,
+    U: Send + Sync + Ord + Copy + Debug,
     R: RngCore,
     Met: Metric<T, Unit = U> + Send + Sync,
 {
@@ -367,26 +368,18 @@ where
 
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
-                // Attempt to insert into nearest queue.
-                let less_than_max = if let Some(top) = searcher.nearest.peek() {
-                    top.0.distance <= distance
-                } else {
-                    false
+                // Are we larger than max nearest?
+                if searcher.nearest.len() == cap {
+                    // In this case remove the worst item.
+                    searcher.nearest.pop();
+                }
+                // Either way, add the new item.
+                let candidate = Neighbor {
+                    index: neighbor,
+                    distance,
                 };
-                if less_than_max {
-                    // It was successful. Now we need to know if its full.
-                    if searcher.nearest.len() == cap {
-                        // In this case remove the worst item.
-                        searcher.nearest.pop();
-                    }
-                    // Either way, add the new item.
-                    let candidate = Neighbor {
-                        index: neighbor,
-                        distance,
-                    };
-                    searcher.nearest.push(NeighborForHeap(candidate));
-                    searcher.candidates.push(candidate);
-                };
+                searcher.nearest.push(NeighborForHeap(candidate));
+                searcher.candidates.push(candidate);
                 seen.push(v);
             }
             searcher.seen.extend(seen);
