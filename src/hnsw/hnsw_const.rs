@@ -371,7 +371,11 @@ where
                     if searcher.nearest.len() == cap + 1 {
                         searcher.nearest.pop_max();
                     }
-                    searcher.candidates.push(candidate);
+                    if let Some(max) = searcher.nearest.peek_max() {
+                        if max.0 != candidate {
+                            searcher.candidates.push(candidate);
+                        }
+                    }
                 }
             }
         }
