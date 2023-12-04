@@ -242,12 +242,12 @@ where
     ///
     /// The `item` must be retrieved from [`HNSW::search_layer`].
     pub fn feature(&self, item: usize) -> &T {
-        &self.features[item as usize]
+        &self.features[item]
     }
 
     /// Extract the feature from a particular level for a given item returned by [`HNSW::search_layer`].
     pub fn layer_feature(&self, level: usize, item: usize) -> &T {
-        &self.features[self.layer_item_id(level, item) as usize]
+        &self.features[self.layer_item_id(level, item)]
     }
 
     /// Retrieve the item ID for a given layer item returned by [`HNSW::search_layer`].
@@ -255,7 +255,7 @@ where
         if level == 0 {
             item
         } else {
-            self.layers[level][item as usize].zero_node
+            self.layers[level][item].zero_node
         }
     }
 
@@ -310,7 +310,7 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                for (d, s) in dest.iter_mut().zip(searcher.nearest.iter_all()) {
+                for (d, s) in dest.iter_mut().zip(searcher.nearest.iter()) {
                     *d = s.0
                 }
                 return &mut dest[..found];
@@ -324,7 +324,7 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        for (d, s) in dest.iter_mut().zip(searcher.nearest.iter_all()) {
+        for (d, s) in dest.iter_mut().zip(searcher.nearest.iter()) {
             *d = s.0
         }
         &mut dest[..found]
@@ -341,11 +341,11 @@ where
     ) {
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             for neighbor in match layer {
-                Layer::NonZero(layer) => layer[index as usize].get_neighbors(),
-                Layer::Zero => self.zero[index as usize].get_neighbors(),
+                Layer::NonZero(layer) => layer[index].get_neighbors(),
+                Layer::Zero => self.zero[index].get_neighbors(),
             } {
                 let node_to_visit = match layer {
-                    Layer::NonZero(layer) => layer[neighbor as usize].zero_node,
+                    Layer::NonZero(layer) => layer[neighbor].zero_node,
                     Layer::Zero => neighbor,
                 };
 
@@ -354,12 +354,10 @@ where
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
                 if searcher.seen.insert(node_to_visit) {
                     // Compute the distance of this neighbor.
-                    let distance = self
-                        .metric
-                        .distance(q, &self.features[node_to_visit as usize]);
+                    let distance = self.metric.distance(q, &self.features[node_to_visit]);
 
                     let candidate = Neighbor {
-                        index: neighbor as usize,
+                        index: neighbor,
                         distance,
                     };
                     // Attempt to insert into nearest queue.
@@ -387,7 +385,7 @@ where
         searcher.candidates.clear();
         // Only preserve the best candidate. The original paper's algorithm uses `1` every time.
         // See Algorithm 5 line 5 of the paper. The paper makes no further comment on why `1` was chosen.
-        let nfh = searcher.nearest.peek_first().unwrap().0;
+        let nfh = searcher.nearest.front().unwrap().0;
         let &Neighbor { index, distance } = &nfh;
         searcher.nearest.clear();
         // Update the node to the next layer.
@@ -440,11 +438,16 @@ where
 
     /// Creates a new node at a layer given its nearest neighbors in that layer.
     /// This contains Algorithm 3 from the paper, but also includes some additional logic.
-    fn create_node(&mut self, q: &T, nearest: &SkipList<NeighborForHeap<Met::Unit>>, layer: usize) {
+    fn create_node(
+        &mut self,
+        q: &T,
+        nearest: &OrderedSkipList<NeighborForHeap<Met::Unit>>,
+        layer: usize,
+    ) {
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
-            for (d, s) in neighbors.iter_mut().zip(nearest.iter_all()) {
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
                 *d = s.0.index
             }
             let node = NeighborNodes { neighbors };
@@ -455,7 +458,7 @@ where
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
-            for (d, s) in neighbors.iter_mut().zip(nearest.iter_all()) {
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
                 *d = s.0.index
             }
             let node = Node {

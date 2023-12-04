@@ -7,8 +7,8 @@ pub use self::hnsw::*;
 
 use ahash::RandomState;
 use alloc::{vec, vec::Vec};
-use convenient_skiplist::SkipList;
 use hashbrown::HashSet;
+use skiplist::OrderedSkipList;
 use space::Neighbor;
 
 #[cfg(feature = "serde")]
@@ -63,10 +63,10 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
 }
 
 /// Contains all the state used when searching the HNSW
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Searcher<Metric: Ord> {
     candidates: Vec<Neighbor<Metric>>,
-    nearest: SkipList<NeighborForHeap<Metric>>,
+    nearest: OrderedSkipList<NeighborForHeap<Metric>>,
     seen: HashSet<usize, RandomState>,
 }
 
@@ -86,7 +86,7 @@ impl<Metric: Ord + Clone> Default for Searcher<Metric> {
     fn default() -> Self {
         Self {
             candidates: vec![],
-            nearest: SkipList::new(),
+            nearest: OrderedSkipList::new(),
             seen: HashSet::with_hasher(RandomState::with_seeds(0, 0, 0, 0)),
         }
     }
