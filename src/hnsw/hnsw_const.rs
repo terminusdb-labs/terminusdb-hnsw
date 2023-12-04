@@ -478,10 +478,10 @@ where
             let neighbor_vec: Vec<_> = nearest
                 .clone()
                 .drain_asc()
-                .take(M0)
+                .take(M)
                 .map(|s| s.0.index)
                 .collect();
-            let min = usize::min(neighbor_vec.len(), M0);
+            let min = usize::min(neighbor_vec.len(), M);
             neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
             let node = Node {
                 zero_node: self.zero.len(),
