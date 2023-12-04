@@ -345,41 +345,44 @@ where
         cap: usize,
     ) {
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
-            for neighbor in match layer {
+            let seen_hash = &searcher.seen;
+            let neigbhours = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
                 Layer::Zero => self.zero[index].get_neighbors(),
-            } {
-                let node_to_visit = match layer {
-                    Layer::NonZero(layer) => layer[neighbor].zero_node,
-                    Layer::Zero => neighbor,
-                };
-
+            }
+            .map(|neighbor| match layer {
+                Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
+                Layer::Zero => (neighbor, neighbor),
+            })
+            .filter(|(_, z)| !seen_hash.contains(z));
+            let mut seen = Vec::new();
+            for (neighbor, node_to_visit) in neigbhours {
                 // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
                 // across all layers since zero nodes are consistent among all layers.
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
-                if searcher.seen.insert(node_to_visit) {
-                    // Compute the distance of this neighbor.
-                    let distance = self.metric.distance(q, &self.features[node_to_visit]);
+                seen.push(node_to_visit);
+                // Compute the distance of this neighbor.
+                let distance = self.metric.distance(q, &self.features[node_to_visit]);
 
-                    let candidate = Neighbor {
-                        index: neighbor,
-                        distance,
-                    };
-                    // Attempt to insert into nearest queue.
-                    searcher.nearest.push(NeighborForHeap(candidate));
+                let candidate = Neighbor {
+                    index: neighbor,
+                    distance,
+                };
+                // Attempt to insert into nearest queue.
+                searcher.nearest.push(NeighborForHeap(candidate));
 
-                    if searcher.nearest.len() == cap + 1 {
-                        if let Some(max) = searcher.nearest.pop_max() {
-                            if max.0 != candidate {
-                                // only push if we didn't fall off the end
-                                searcher.candidates.push(candidate);
-                            }
+                if searcher.nearest.len() == cap + 1 {
+                    if let Some(max) = searcher.nearest.pop_max() {
+                        if max.0 != candidate {
+                            // only push if we didn't fall off the end
+                            searcher.candidates.push(candidate);
                         }
-                    } else {
-                        searcher.candidates.push(candidate);
                     }
+                } else {
+                    searcher.candidates.push(candidate);
                 }
             }
+            searcher.seen.extend(seen);
         }
     }
 
