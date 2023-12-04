@@ -369,12 +369,14 @@ where
                     searcher.nearest.push(NeighborForHeap(candidate));
 
                     if searcher.nearest.len() == cap + 1 {
-                        searcher.nearest.pop_max();
-                    }
-                    if let Some(max) = searcher.nearest.peek_max() {
-                        if max.0 != candidate {
-                            searcher.candidates.push(candidate);
+                        if let Some(max) = searcher.nearest.pop_max() {
+                            if max.0 != candidate {
+                                // only push if we didn't fall off the end
+                                searcher.candidates.push(candidate);
+                            }
                         }
+                    } else {
+                        searcher.candidates.push(candidate);
                     }
                 }
             }
