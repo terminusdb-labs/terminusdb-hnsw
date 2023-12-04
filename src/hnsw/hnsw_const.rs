@@ -506,9 +506,10 @@ where
                 &target.neighbors.neighbors[..],
             )
         };
-
+        dbg!(target_neighbors);
         // Check if there is a point where the target has empty neighbor slots and add it there in that case.
         let empty_point = target_neighbors.partition_point(|&n| n != !0);
+        dbg!(empty_point);
         if empty_point != target_neighbors.len() {
             // In this case we did find the first spot where the target was empty within the slice.
             // Now we add the neighbor to this slot.
