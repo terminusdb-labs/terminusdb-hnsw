@@ -242,12 +242,12 @@ where
     ///
     /// The `item` must be retrieved from [`HNSW::search_layer`].
     pub fn feature(&self, item: usize) -> &T {
-        &self.features[item as usize]
+        &self.features[item]
     }
 
     /// Extract the feature from a particular level for a given item returned by [`HNSW::search_layer`].
     pub fn layer_feature(&self, level: usize, item: usize) -> &T {
-        &self.features[self.layer_item_id(level, item) as usize]
+        &self.features[self.layer_item_id(level, item)]
     }
 
     /// Retrieve the item ID for a given layer item returned by [`HNSW::search_layer`].
@@ -255,7 +255,7 @@ where
         if level == 0 {
             item
         } else {
-            self.layers[level][item as usize].zero_node
+            self.layers[level][item].zero_node
         }
     }
 
@@ -310,14 +310,9 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                let neighbor_vec: Vec<_> = searcher
-                    .nearest
-                    .clone()
-                    .drain_asc()
-                    .take(found)
-                    .map(|s| s.0)
-                    .collect();
-                dest.copy_from_slice(&neighbor_vec);
+                for (s, d) in dest.iter_mut().zip(searcher.nearest.clone().drain_asc()) {
+                    *s = d.0;
+                }
                 return &mut dest[..found];
             }
             self.lower_search(layer, searcher);
@@ -351,11 +346,11 @@ where
     ) {
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             for neighbor in match layer {
-                Layer::NonZero(layer) => layer[index as usize].get_neighbors(),
-                Layer::Zero => self.zero[index as usize].get_neighbors(),
+                Layer::NonZero(layer) => layer[index].get_neighbors(),
+                Layer::Zero => self.zero[index].get_neighbors(),
             } {
                 let node_to_visit = match layer {
-                    Layer::NonZero(layer) => layer[neighbor as usize].zero_node,
+                    Layer::NonZero(layer) => layer[neighbor].zero_node,
                     Layer::Zero => neighbor,
                 };
 
@@ -364,12 +359,10 @@ where
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
                 if searcher.seen.insert(node_to_visit) {
                     // Compute the distance of this neighbor.
-                    let distance = self
-                        .metric
-                        .distance(q, &self.features[node_to_visit as usize]);
+                    let distance = self.metric.distance(q, &self.features[node_to_visit]);
 
                     let candidate = Neighbor {
-                        index: neighbor as usize,
+                        index: neighbor,
                         distance,
                     };
                     // Attempt to insert into nearest queue.
@@ -436,7 +429,7 @@ where
     /// Gets the entry point's feature.
     fn entry_feature(&self) -> &T {
         if let Some(last_layer) = self.layers.last() {
-            &self.features[last_layer[0].zero_node as usize]
+            &self.features[last_layer[0].zero_node]
         } else {
             &self.features[0]
         }
@@ -459,30 +452,20 @@ where
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
-            let neighbor_vec: Vec<_> = nearest
-                .clone()
-                .drain_asc()
-                .take(M0)
-                .map(|s| s.0.index)
-                .collect();
-            let min = usize::min(neighbor_vec.len(), M0);
-            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
+            for (d, s) in neighbors.iter_mut().zip(nearest.clone().drain_asc()) {
+                *d = s.0.index
+            }
             let node = NeighborNodes { neighbors };
             for neighbor in node.get_neighbors() {
-                self.add_neighbor(q, new_index as usize, neighbor, layer);
+                self.add_neighbor(q, new_index, neighbor, layer);
             }
             self.zero.push(node);
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
-            let neighbor_vec: Vec<_> = nearest
-                .clone()
-                .drain_asc()
-                .take(M)
-                .map(|s| s.0.index)
-                .collect();
-            let min = usize::min(neighbor_vec.len(), M);
-            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
+            for (d, s) in neighbors.iter_mut().zip(nearest.clone().drain_asc()) {
+                *d = s.0.index
+            }
             let node = Node {
                 zero_node: self.zero.len(),
                 next_node: if layer == 1 {
@@ -522,11 +505,9 @@ where
             // In this case we did find the first spot where the target was empty within the slice.
             // Now we add the neighbor to this slot.
             if layer == 0 {
-                self.zero[target_ix as usize].neighbors[empty_point] = node_ix;
+                self.zero[target_ix].neighbors[empty_point] = node_ix;
             } else {
-                self.layers[layer - 1][target_ix as usize]
-                    .neighbors
-                    .neighbors[empty_point] = node_ix;
+                self.layers[layer - 1][target_ix].neighbors.neighbors[empty_point] = node_ix;
             }
         } else {
             // Otherwise, we need to find the worst neighbor currently.
@@ -558,11 +539,9 @@ where
             // This is also different for the zero layer.
             if self.metric.distance(q, target_feature) < worst_distance {
                 if layer == 0 {
-                    self.zero[target_ix as usize].neighbors[worst_ix] = node_ix;
+                    self.zero[target_ix].neighbors[worst_ix] = node_ix;
                 } else {
-                    self.layers[layer - 1][target_ix as usize]
-                        .neighbors
-                        .neighbors[worst_ix] = node_ix;
+                    self.layers[layer - 1][target_ix].neighbors.neighbors[worst_ix] = node_ix;
                 }
             }
         }
