@@ -4,6 +4,8 @@ use crate::*;
 use alloc::{vec, vec::Vec};
 use num_traits::Zero;
 use rand_core::{RngCore, SeedableRng};
+use rayon::iter::ParallelBridge;
+use rayon::prelude::ParallelIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use space::{Knn, KnnPoints, Metric, Neighbor};
@@ -339,26 +341,38 @@ where
         layer: Layer<&[Node<M>]>,
         cap: usize,
     ) {
+        // Assume that M0 is greatest for now
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             let seen_hash = &searcher.seen;
-            let neigbhours = match layer {
+            let neighbors : Vec<_> = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
-                Layer::Zero => self.zero[index].get_neighbors(),
-            }
-            .map(|neighbor| match layer {
+                 Layer::Zero => self.zero[index].get_neighbors(),
+            }.map(|neighbor| match layer {
                 Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                 Layer::Zero => (neighbor, neighbor),
-            })
-            .filter(|(_, z)| !seen_hash.contains(z));
+            }).filter(|(_, z)| !seen_hash.contains(z))
+                .collect();
+
+            let metric = &self.metric;
+            let features = &self.features;
+            let neighbors_and_distance_vecs : Vec<_> = neighbors
+                .chunks(12)
+                //.par_bridge()
+                .map(|chunk| {
+                    let res: Vec<_> = chunk
+                        .into_iter()
+                        .map(|(s,z)| {
+                            (*s, *z, metric.distance(q, &features[*z]))
+                        }).collect();
+                    res
+                }).collect();
+            let neighbors_and_distance = neighbors_and_distance_vecs.into_iter().flatten();
             let mut seen = Vec::new();
-            for (neighbor, node_to_visit) in neigbhours {
+            for (neighbor, node_to_visit, distance) in neighbors_and_distance {
                 // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
                 // across all layers since zero nodes are consistent among all layers.
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
                 seen.push(node_to_visit);
-                // Compute the distance of this neighbor.
-                let distance = self.metric.distance(q, &self.features[node_to_visit]);
-
                 let candidate = Neighbor {
                     index: neighbor,
                     distance,
