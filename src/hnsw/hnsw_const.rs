@@ -460,6 +460,13 @@ where
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
+            let neighbor_vec: Vec<_> = nearest
+                .clone()
+                .drain_asc()
+                .take(M0)
+                .map(|s| s.0.index)
+                .collect();
+            neighbors.copy_from_slice(&neighbor_vec);
             for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
                 *d = s.0.index;
             }
