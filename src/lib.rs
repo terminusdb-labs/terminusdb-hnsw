@@ -9,7 +9,6 @@ use ahash::RandomState;
 use alloc::{vec, vec::Vec};
 use convenient_skiplist::SkipList;
 use hashbrown::HashSet;
-use skiplist::SkipList;
 use space::Neighbor;
 
 #[cfg(feature = "serde")]
