@@ -2,6 +2,7 @@ use super::nodes::{HasNeighbors, Layer};
 use crate::hnsw::nodes::{NeighborNodes, Node};
 use crate::*;
 use alloc::{vec, vec::Vec};
+use core::fmt::Debug;
 use num_traits::Zero;
 use rand_core::{RngCore, SeedableRng};
 use rayon::iter::ParallelBridge;
@@ -83,10 +84,12 @@ where
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> Knn for Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> Knn for Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy + Zero + Debug,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     type Ix = usize;
     type Metric = Met;
@@ -110,20 +113,24 @@ where
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> KnnPoints for Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> KnnPoints for Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy + Zero + Debug,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     fn get_point(&self, index: usize) -> &'_ T {
         &self.features[index]
     }
 }
 
-impl<Met, T, R, const M: usize, const M0: usize> Hnsw<Met, T, R, M, M0>
+impl<Met, T, R, U, const M: usize, const M0: usize> Hnsw<Met, T, R, M, M0>
 where
+    T: Send + Sync,
+    U: Send + Sync + Ord + Copy + Zero + Debug,
     R: RngCore,
-    Met: Metric<T>,
+    Met: Metric<T, Unit = U> + Send + Sync,
 {
     /// Creates a HNSW with the passed `prng`.
     pub fn new_prng(metric: Met, prng: R) -> Self {
@@ -344,28 +351,30 @@ where
         // Assume that M0 is greatest for now
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
             let seen_hash = &searcher.seen;
-            let neighbors : Vec<_> = match layer {
+            let neighbors: Vec<_> = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
-                 Layer::Zero => self.zero[index].get_neighbors(),
-            }.map(|neighbor| match layer {
+                Layer::Zero => self.zero[index].get_neighbors(),
+            }
+            .map(|neighbor| match layer {
                 Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                 Layer::Zero => (neighbor, neighbor),
-            }).filter(|(_, z)| !seen_hash.contains(z))
-                .collect();
+            })
+            .filter(|(_, z)| !seen_hash.contains(z))
+            .collect();
 
             let metric = &self.metric;
             let features = &self.features;
-            let neighbors_and_distance_vecs : Vec<_> = neighbors
+            let neighbors_and_distance_vecs: Vec<_> = neighbors
                 .chunks(12)
-                //.par_bridge()
+                .par_bridge()
                 .map(|chunk| {
                     let res: Vec<_> = chunk
                         .into_iter()
-                        .map(|(s,z)| {
-                            (*s, *z, metric.distance(q, &features[*z]))
-                        }).collect();
+                        .map(|(s, z)| (*s, *z, metric.distance(q, &features[*z])))
+                        .collect();
                     res
-                }).collect();
+                })
+                .collect();
             let neighbors_and_distance = neighbors_and_distance_vecs.into_iter().flatten();
             let mut seen = Vec::new();
             for (neighbor, node_to_visit, distance) in neighbors_and_distance {
