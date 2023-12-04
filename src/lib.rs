@@ -5,8 +5,9 @@ mod hnsw;
 pub use self::hnsw::*;
 
 use ahash::RandomState;
-use alloc::{collections::BinaryHeap, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 use hashbrown::HashSet;
+use min_max_heap::MinMaxHeap;
 use space::Neighbor;
 
 #[cfg(feature = "serde")]
@@ -56,7 +57,7 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> PartialOrd for NeighborForHeap<Uni
 
 impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        other.0.distance.cmp(&self.0.distance)
+        self.0.distance.cmp(&other.0.distance)
     }
 }
 
@@ -64,7 +65,7 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
 #[derive(Clone, Debug)]
 pub struct Searcher<Metric: Ord> {
     candidates: Vec<Neighbor<Metric>>,
-    nearest: BinaryHeap<NeighborForHeap<Metric>>,
+    nearest: MinMaxHeap<NeighborForHeap<Metric>>,
     seen: HashSet<usize, RandomState>,
 }
 
@@ -84,7 +85,7 @@ impl<Metric: Ord> Default for Searcher<Metric> {
     fn default() -> Self {
         Self {
             candidates: vec![],
-            nearest: BinaryHeap::new(),
+            nearest: MinMaxHeap::new(),
             seen: HashSet::with_hasher(RandomState::with_seeds(0, 0, 0, 0)),
         }
     }

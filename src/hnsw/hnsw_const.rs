@@ -1,7 +1,6 @@
 use super::nodes::{HasNeighbors, Layer};
 use crate::hnsw::nodes::{NeighborNodes, Node};
 use crate::*;
-use alloc::collections::BinaryHeap;
 use alloc::{vec, vec::Vec};
 use num_traits::Zero;
 use rand_core::{RngCore, SeedableRng};
@@ -319,7 +318,9 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                let nearest: Vec<_> = searcher.nearest.iter().take(found).map(|n| n.0).collect();
+                let mut nearest: Vec<_> =
+                    searcher.nearest.iter().take(found).map(|n| n.0).collect();
+                nearest.sort();
                 dest.copy_from_slice(&nearest[..found]);
                 return &mut dest[..found];
             }
@@ -332,7 +333,8 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        let nearest: Vec<_> = searcher.nearest.iter().take(found).map(|n| n.0).collect();
+        let mut nearest: Vec<_> = searcher.nearest.iter().take(found).map(|n| n.0).collect();
+        nearest.sort();
         dest[..found].copy_from_slice(&nearest[..found]);
         &mut dest[..found]
     }
@@ -368,17 +370,20 @@ where
 
             let mut seen = Vec::new();
             for (neighbor, v, distance) in neighbor_distance {
-                // Are we larger than max nearest?
-                if searcher.nearest.len() == cap {
-                    // In this case remove the worst item.
-                    searcher.nearest.pop();
-                }
                 // Either way, add the new item.
                 let candidate = Neighbor {
                     index: neighbor,
                     distance,
                 };
                 searcher.nearest.push(NeighborForHeap(candidate));
+                // Are we larger than max allowed in nearest?
+                if searcher.nearest.len() == cap {
+                    // In this case remove the worst item.
+                    searcher.nearest.pop_max();
+                }
+                dbg!(&searcher.nearest);
+                dbg!(&searcher.nearest.peek_max());
+                dbg!(&searcher.nearest.peek_min());
                 searcher.candidates.push(candidate);
                 seen.push(v);
             }
@@ -399,7 +404,7 @@ where
         searcher.candidates.clear();
         // Only preserve the best candidate. The original paper's algorithm uses `1` every time.
         // See Algorithm 5 line 5 of the paper. The paper makes no further comment on why `1` was chosen.
-        let n = searcher.nearest.peek().unwrap().0;
+        let n = dbg!(searcher.nearest.peek_min().unwrap().0);
         let Neighbor { index, distance } = n;
         // Update the node to the next layer.
         let new_index = layer[index].next_node;
@@ -451,7 +456,7 @@ where
 
     /// Creates a new node at a layer given its nearest neighbors in that layer.
     /// This contains Algorithm 3 from the paper, but also includes some additional logic.
-    fn create_node(&mut self, q: &T, nearest: &BinaryHeap<NeighborForHeap<U>>, layer: usize) {
+    fn create_node(&mut self, q: &T, nearest: &MinMaxHeap<NeighborForHeap<U>>, layer: usize) {
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
