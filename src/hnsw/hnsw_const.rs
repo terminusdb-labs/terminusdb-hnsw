@@ -466,10 +466,8 @@ where
                 .take(M0)
                 .map(|s| s.0.index)
                 .collect();
-            neighbors.copy_from_slice(&neighbor_vec);
-            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
-                *d = s.0.index;
-            }
+            let min = usize::min(neighbor_vec.len(), M0);
+            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
             let node = NeighborNodes { neighbors };
             for neighbor in node.get_neighbors() {
                 self.add_neighbor(q, new_index, neighbor, layer);
@@ -478,9 +476,14 @@ where
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
-            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
-                *d = s.0.index;
-            }
+            let neighbor_vec: Vec<_> = nearest
+                .clone()
+                .drain_asc()
+                .take(M0)
+                .map(|s| s.0.index)
+                .collect();
+            let min = usize::min(neighbor_vec.len(), M0);
+            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
             let node = Node {
                 zero_node: self.zero.len(),
                 next_node: if layer == 1 {
