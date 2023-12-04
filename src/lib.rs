@@ -7,8 +7,9 @@ pub use self::hnsw::*;
 
 use ahash::RandomState;
 use alloc::{vec, vec::Vec};
+use convenient_skiplist::SkipList;
 use hashbrown::HashSet;
-use min_max_heap::MinMaxHeap;
+use skiplist::SkipList;
 use space::Neighbor;
 
 #[cfg(feature = "serde")]
@@ -66,11 +67,11 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
 #[derive(Clone, Debug)]
 pub struct Searcher<Metric: Ord> {
     candidates: Vec<Neighbor<Metric>>,
-    nearest: MinMaxHeap<NeighborForHeap<Metric>>,
+    nearest: SkipList<NeighborForHeap<Metric>>,
     seen: HashSet<usize, RandomState>,
 }
 
-impl<Metric: Ord> Searcher<Metric> {
+impl<Metric: Ord + Clone> Searcher<Metric> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -82,11 +83,11 @@ impl<Metric: Ord> Searcher<Metric> {
     }
 }
 
-impl<Metric: Ord> Default for Searcher<Metric> {
+impl<Metric: Ord + Clone> Default for Searcher<Metric> {
     fn default() -> Self {
         Self {
             candidates: vec![],
-            nearest: MinMaxHeap::new(),
+            nearest: SkipList::new(),
             seen: HashSet::with_hasher(RandomState::with_seeds(0, 0, 0, 0)),
         }
     }

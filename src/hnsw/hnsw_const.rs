@@ -310,14 +310,9 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                let neighbor_vec: Vec<_> = searcher
-                    .nearest
-                    .clone()
-                    .drain_asc()
-                    .take(found)
-                    .map(|s| s.0)
-                    .collect();
-                dest.copy_from_slice(&neighbor_vec);
+                for (d, s) in dest.iter_mut().zip(searcher.nearest.iter_all()) {
+                    *d = s.0
+                }
                 return &mut dest[..found];
             }
             self.lower_search(layer, searcher);
@@ -329,14 +324,9 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        let neighbor_vec: Vec<_> = searcher
-            .nearest
-            .clone()
-            .drain_asc()
-            .take(found)
-            .map(|s| s.0)
-            .collect();
-        dest.copy_from_slice(&neighbor_vec);
+        for (d, s) in dest.iter_mut().zip(searcher.nearest.iter_all()) {
+            *d = s.0
+        }
         &mut dest[..found]
     }
 
@@ -373,10 +363,10 @@ where
                         distance,
                     };
                     // Attempt to insert into nearest queue.
-                    searcher.nearest.push(NeighborForHeap(candidate));
+                    searcher.nearest.insert(NeighborForHeap(candidate));
 
                     if searcher.nearest.len() == cap + 1 {
-                        searcher.nearest.pop_max();
+                        searcher.nearest.pop_back();
                     }
                     searcher.candidates.push(candidate);
                 }
@@ -397,7 +387,7 @@ where
         searcher.candidates.clear();
         // Only preserve the best candidate. The original paper's algorithm uses `1` every time.
         // See Algorithm 5 line 5 of the paper. The paper makes no further comment on why `1` was chosen.
-        let nfh = searcher.nearest.peek_min().unwrap().0;
+        let nfh = searcher.nearest.peek_first().unwrap().0;
         let &Neighbor { index, distance } = &nfh;
         searcher.nearest.clear();
         // Update the node to the next layer.
@@ -407,7 +397,7 @@ where
             distance,
         };
         // Insert the index of the nearest neighbor into the nearest pool for the next layer.
-        searcher.nearest.push(NeighborForHeap(candidate));
+        searcher.nearest.insert(NeighborForHeap(candidate));
         // Insert the index into the candidate pool as well.
         searcher.candidates.push(candidate);
     }
@@ -424,7 +414,7 @@ where
             distance: entry_distance,
         };
         searcher.candidates.push(candidate);
-        searcher.nearest.push(NeighborForHeap(candidate));
+        searcher.nearest.insert(NeighborForHeap(candidate));
         searcher.seen.insert(
             self.layers
                 .last()
@@ -450,23 +440,13 @@ where
 
     /// Creates a new node at a layer given its nearest neighbors in that layer.
     /// This contains Algorithm 3 from the paper, but also includes some additional logic.
-    fn create_node(
-        &mut self,
-        q: &T,
-        nearest: &MinMaxHeap<NeighborForHeap<Met::Unit>>,
-        layer: usize,
-    ) {
+    fn create_node(&mut self, q: &T, nearest: &SkipList<NeighborForHeap<Met::Unit>>, layer: usize) {
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
-            let neighbor_vec: Vec<_> = nearest
-                .clone()
-                .drain_asc()
-                .take(M0)
-                .map(|s| s.0.index)
-                .collect();
-            let min = usize::min(neighbor_vec.len(), M0);
-            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter_all()) {
+                *d = s.0.index
+            }
             let node = NeighborNodes { neighbors };
             for neighbor in node.get_neighbors() {
                 self.add_neighbor(q, new_index as usize, neighbor, layer);
@@ -475,14 +455,9 @@ where
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
-            let neighbor_vec: Vec<_> = nearest
-                .clone()
-                .drain_asc()
-                .take(M)
-                .map(|s| s.0.index)
-                .collect();
-            let min = usize::min(neighbor_vec.len(), M);
-            neighbors[..min].copy_from_slice(&neighbor_vec[..min]);
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter_all()) {
+                *d = s.0.index
+            }
             let node = Node {
                 zero_node: self.zero.len(),
                 next_node: if layer == 1 {
