@@ -324,14 +324,9 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        let neighbor_vec: Vec<_> = searcher
-            .nearest
-            .clone()
-            .drain_asc()
-            .take(found)
-            .map(|s| s.0)
-            .collect();
-        dest.copy_from_slice(&neighbor_vec);
+        for (s, d) in dest.iter_mut().zip(searcher.nearest.clone().drain_asc()) {
+            *s = d.0
+        }
         &mut dest[..found]
     }
 
