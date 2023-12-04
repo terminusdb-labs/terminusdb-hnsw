@@ -382,9 +382,7 @@ where
                     searcher.candidates.push(candidate);
                 }
             }
-            for i in seen.iter() {
-                let _ = searcher.seen.add(i);
-            }
+            searcher.seen.extend(seen);
         }
     }
 
@@ -429,9 +427,8 @@ where
         };
         searcher.candidates.push(candidate);
         searcher.nearest.push(NeighborForHeap(candidate));
-        let _ = searcher.seen.add(
-            &self
-                .layers
+        searcher.seen.insert(
+            self.layers
                 .last()
                 .map(|layer| layer[0].zero_node)
                 .unwrap_or(0),

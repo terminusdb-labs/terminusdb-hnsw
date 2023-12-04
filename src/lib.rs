@@ -1,13 +1,13 @@
+#![no_std]
 extern crate alloc;
 
 mod hnsw;
 
-use std::hash::DefaultHasher;
-
 pub use self::hnsw::*;
 
+use ahash::RandomState;
 use alloc::{vec, vec::Vec};
-use cuckoofilter::CuckooFilter;
+use hashbrown::HashSet;
 use min_max_heap::MinMaxHeap;
 use space::Neighbor;
 
@@ -63,10 +63,11 @@ impl<Unit: PartialEq + Eq + PartialOrd + Ord> Ord for NeighborForHeap<Unit> {
 }
 
 /// Contains all the state used when searching the HNSW
+#[derive(Clone, Debug)]
 pub struct Searcher<Metric: Ord> {
     candidates: Vec<Neighbor<Metric>>,
     nearest: MinMaxHeap<NeighborForHeap<Metric>>,
-    seen: CuckooFilter<DefaultHasher>,
+    seen: HashSet<usize, RandomState>,
 }
 
 impl<Metric: Ord> Searcher<Metric> {
@@ -77,7 +78,7 @@ impl<Metric: Ord> Searcher<Metric> {
     fn clear(&mut self) {
         self.candidates.clear();
         self.nearest.clear();
-        self.seen = CuckooFilter::new();
+        self.seen.clear();
     }
 }
 
@@ -86,7 +87,7 @@ impl<Metric: Ord> Default for Searcher<Metric> {
         Self {
             candidates: vec![],
             nearest: MinMaxHeap::new(),
-            seen: CuckooFilter::new(),
+            seen: HashSet::with_hasher(RandomState::with_seeds(0, 0, 0, 0)),
         }
     }
 }
