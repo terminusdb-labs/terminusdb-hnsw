@@ -350,8 +350,11 @@ where
     ) {
         // Assume that M0 is greatest for now
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
-            let seen_hash = &searcher.seen;
-            let neighbors: Vec<_> = match layer {
+            //let mut seen_hash = &searcher.seen;
+            let metric = &self.metric;
+            let features = &self.features;
+            let seen: &mut HashSet<usize> = &mut searcher.seen;
+            let neighbors = match layer {
                 Layer::NonZero(layer) => layer[index].get_neighbors(),
                 Layer::Zero => self.zero[index].get_neighbors(),
             }
@@ -359,29 +362,14 @@ where
                 Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                 Layer::Zero => (neighbor, neighbor),
             })
-            .filter(|(_, z)| !seen_hash.contains(z))
-            .collect();
+            .filter(move |(_, z)| seen.insert(*z));
 
-            let metric = &self.metric;
-            let features = &self.features;
-            let neighbors_and_distance_vecs: Vec<_> = neighbors
-                .chunks(12)
-                .par_bridge()
-                .map(|chunk| {
-                    let res: Vec<_> = chunk
-                        .into_iter()
-                        .map(|(s, z)| (*s, *z, metric.distance(q, &features[*z])))
-                        .collect();
-                    res
-                })
-                .collect();
-            let neighbors_and_distance = neighbors_and_distance_vecs.into_iter().flatten();
-            let mut seen = Vec::new();
-            for (neighbor, node_to_visit, distance) in neighbors_and_distance {
+            let neighbors_and_distance =
+                neighbors.map(|(s, z)| (s, metric.distance(q, &features[z])));
+            for (neighbor, distance) in neighbors_and_distance {
                 // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
                 // across all layers since zero nodes are consistent among all layers.
                 // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
-                seen.push(node_to_visit);
                 let candidate = Neighbor {
                     index: neighbor,
                     distance,
@@ -400,7 +388,6 @@ where
                     searcher.candidates.push(candidate);
                 }
             }
-            searcher.seen.extend(seen);
         }
     }
 
