@@ -362,14 +362,14 @@ where
                 Layer::NonZero(layer) => (neighbor, layer[neighbor].zero_node),
                 Layer::Zero => (neighbor, neighbor),
             })
+            // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
+            // across all layers since zero nodes are consistent among all layers.
+            // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
             .filter(move |(_, z)| seen.insert(*z));
 
             let neighbors_and_distance =
                 neighbors.map(|(s, z)| (s, metric.distance(q, &features[z])));
             for (neighbor, distance) in neighbors_and_distance {
-                // Don't visit previously visited things. We use the zero node to allow reusing the seen filter
-                // across all layers since zero nodes are consistent among all layers.
-                // TODO: Use Cuckoo Filter or Bloom Filter to speed this up/take less memory.
                 let candidate = Neighbor {
                     index: neighbor,
                     distance,
