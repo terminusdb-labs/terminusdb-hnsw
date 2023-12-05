@@ -348,9 +348,7 @@ where
         layer: Layer<&[Node<M>]>,
         cap: usize,
     ) {
-        // Assume that M0 is greatest for now
         while let Some(Neighbor { index, .. }) = searcher.candidates.pop() {
-            //let mut seen_hash = &searcher.seen;
             let metric = &self.metric;
             let features = &self.features;
             let seen: &mut HashSet<usize> = &mut searcher.seen;
@@ -374,13 +372,14 @@ where
                     index: neighbor,
                     distance,
                 };
-                // Attempt to insert into nearest queue.
+                // Insert into 'nearest' queue.
                 searcher.nearest.push(NeighborForHeap(candidate));
 
                 if searcher.nearest.len() == cap + 1 {
+                    // We're over cap, pop the max
                     if let Some(max) = searcher.nearest.pop_max() {
                         if max.0 != candidate {
-                            // only push if we didn't fall off the end
+                            // only push if our candidate didn't fall off the end
                             searcher.candidates.push(candidate);
                         }
                     }
