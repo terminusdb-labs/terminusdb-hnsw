@@ -319,7 +319,7 @@ where
             self.search_single_layer(q, searcher, Layer::NonZero(layer), cap);
             if ix + 1 == level {
                 let found = core::cmp::min(dest.len(), searcher.nearest.len());
-                for (s, d) in dest.iter_mut().zip(searcher.nearest.clone().drain_asc()) {
+                for (s, d) in dest.iter_mut().zip(searcher.nearest.iter()) {
                     *s = d.0;
                 }
                 return &mut dest[..found];
@@ -333,7 +333,7 @@ where
         self.search_zero_layer(q, searcher, cap);
 
         let found = core::cmp::min(dest.len(), searcher.nearest.len());
-        for (s, d) in dest.iter_mut().zip(searcher.nearest.clone().drain_asc()) {
+        for (s, d) in dest.iter_mut().zip(searcher.nearest.iter()) {
             *s = d.0
         }
         &mut dest[..found]
@@ -373,11 +373,11 @@ where
                     distance,
                 };
                 // Insert into 'nearest' queue.
-                searcher.nearest.push(NeighborForHeap(candidate));
+                searcher.nearest.insert(NeighborForHeap(candidate));
 
                 if searcher.nearest.len() == cap + 1 {
                     // We're over cap, pop the max
-                    if let Some(max) = searcher.nearest.pop_max() {
+                    if let Some(max) = searcher.nearest.pop_back() {
                         if max.0 != candidate {
                             // only push if our candidate didn't fall off the end
                             searcher.candidates.push(candidate);
@@ -403,7 +403,7 @@ where
         searcher.candidates.clear();
         // Only preserve the best candidate. The original paper's algorithm uses `1` every time.
         // See Algorithm 5 line 5 of the paper. The paper makes no further comment on why `1` was chosen.
-        let nfh = searcher.nearest.peek_min().unwrap().0;
+        let nfh = searcher.nearest.front().unwrap().0;
         let &Neighbor { index, distance } = &nfh;
         searcher.nearest.clear();
         // Update the node to the next layer.
@@ -413,7 +413,7 @@ where
             distance,
         };
         // Insert the index of the nearest neighbor into the nearest pool for the next layer.
-        searcher.nearest.push(NeighborForHeap(candidate));
+        searcher.nearest.insert(NeighborForHeap(candidate));
         // Insert the index into the candidate pool as well.
         searcher.candidates.push(candidate);
     }
@@ -430,7 +430,7 @@ where
             distance: entry_distance,
         };
         searcher.candidates.push(candidate);
-        searcher.nearest.push(NeighborForHeap(candidate));
+        searcher.nearest.insert(NeighborForHeap(candidate));
         searcher.seen.insert(
             self.layers
                 .last()
@@ -459,13 +459,13 @@ where
     fn create_node(
         &mut self,
         q: &T,
-        nearest: &MinMaxHeap<NeighborForHeap<Met::Unit>>,
+        nearest: &OrderedSkipList<NeighborForHeap<Met::Unit>>,
         layer: usize,
     ) {
         if layer == 0 {
             let new_index = self.zero.len();
             let mut neighbors: [usize; M0] = [!0; M0];
-            for (d, s) in neighbors.iter_mut().zip(nearest.clone().drain_asc()) {
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
                 *d = s.0.index
             }
             let node = NeighborNodes { neighbors };
@@ -476,7 +476,7 @@ where
         } else {
             let new_index = self.layers[layer - 1].len();
             let mut neighbors: [usize; M] = [!0; M];
-            for (d, s) in neighbors.iter_mut().zip(nearest.clone().drain_asc()) {
+            for (d, s) in neighbors.iter_mut().zip(nearest.iter()) {
                 *d = s.0.index
             }
             let node = Node {
