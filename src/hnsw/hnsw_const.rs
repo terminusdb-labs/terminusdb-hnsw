@@ -147,6 +147,35 @@ where
         }
     }
 
+    /// Deletes a feature from the HNSW
+    pub fn delete(&mut self, feature: usize) {
+        for ix in (0..self.layers.len()).rev() {
+            let layer = &mut self.layers[ix];
+            for v in layer.iter_mut() {
+                // This needs to be deleted
+                if v.zero_node == feature {
+                    *v = Node {
+                        zero_node: 0,
+                        next_node: 0,
+                        neighbors: NeighborNodes { neighbors: [!0; M] },
+                    };
+                }
+            }
+        }
+        for (i, v) in &mut self.zero.iter_mut().enumerate() {
+            if i == feature {
+                *v = NeighborNodes {
+                    neighbors: [!0; M0],
+                }
+            }
+        }
+    }
+
+    pub fn update(&mut self, feature: usize, q: T, searcher: &mut Searcher<Met::Unit>) -> usize {
+        self.delete(feature);
+        self.insert(q, searcher)
+    }
+
     /// Inserts a feature into the HNSW.
     pub fn insert(&mut self, q: T, searcher: &mut Searcher<Met::Unit>) -> usize {
         // Get the level of this feature.
